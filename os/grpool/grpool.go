@@ -27,10 +27,11 @@ type RecoverFunc func(ctx context.Context, err error)
 
 // Pool manages the goroutines using pool.
 type Pool struct {
-	limit  int         // Max goroutine count limit.
-	count  *gtype.Int  // Current running goroutine count.
-	list   *glist.List // List for asynchronous job adding purpose.
-	closed *gtype.Bool // Is pool closed or not.
+	limit   int         // Max goroutine count limit.
+	count   *gtype.Int  // Current running goroutine count.
+	list    *glist.List // List for asynchronous job adding purpose.
+	closed  *gtype.Bool // Is pool closed or not.
+	running *gtype.Bool // Is pool running or not.
 }
 
 type localPoolItem struct {
@@ -126,6 +127,9 @@ func (p *Pool) checkAndFork() {
 	}
 	// Create job function in goroutine.
 	go func() {
+		if !p.running.Val() {
+			return
+		}
 		defer p.count.Add(-1)
 
 		var (
@@ -190,4 +194,14 @@ func (p *Pool) IsClosed() bool {
 // Close closes the goroutine pool, which makes all goroutines exit.
 func (p *Pool) Close() {
 	p.closed.Set(true)
+}
+
+// Start Starts the goroutine pool. You can call Stop() to stop the pool.
+func (p *Pool) Start() {
+	p.running.Set(true)
+}
+
+// Stop stops the goroutine pool. You can call Start() again to restart the pool.
+func (p *Pool) Stop() {
+	p.running.Set(true)
 }
