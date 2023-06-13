@@ -96,15 +96,11 @@ func (c CGenService) generateServiceFile(in generateServiceFilesInput) (ok bool,
 
 	// Generating variable and register definitions.
 	var (
-		variableContent          string
-		generatingInterfaceCheck string
+		variableContent string
 	)
 	// Variable definitions.
 	for structName := range in.SrcStructFunctions {
-		generatingInterfaceCheck = fmt.Sprintf(`[^\w\d]+%s.I%s[^\w\d]`, in.DstPackageName, structName)
-		if gregex.IsMatchString(generatingInterfaceCheck, generatedContent) {
-			continue
-		}
+
 		variableContent += gstr.Trim(gstr.ReplaceByMap(consts.TemplateGenServiceContentVariable, g.MapStrStr{
 			"{StructName}":    structName,
 			"{InterfaceName}": "I" + structName,
@@ -120,10 +116,7 @@ func (c CGenService) generateServiceFile(in generateServiceFilesInput) (ok bool,
 	}
 	// Variable register function definitions.
 	for structName := range in.SrcStructFunctions {
-		generatingInterfaceCheck = fmt.Sprintf(`[^\w\d]+%s.I%s[^\w\d]`, in.DstPackageName, structName)
-		if gregex.IsMatchString(generatingInterfaceCheck, generatedContent) {
-			continue
-		}
+
 		generatedContent += gstr.Trim(gstr.ReplaceByMap(consts.TemplateGenServiceContentRegister, g.MapStrStr{
 			"{StructName}":    structName,
 			"{InterfaceName}": "I" + structName,
