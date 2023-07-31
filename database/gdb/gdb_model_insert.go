@@ -199,6 +199,27 @@ func (m *Model) Insert(data ...interface{}) (result sql.Result, err error) {
 	return m.doInsertWithOption(ctx, InsertOptionDefault)
 }
 
+func (m *Model) Create(data interface{}) (err error) {
+	var (
+		result sql.Result
+		value  = reflect.ValueOf(data)
+		LastID int64
+	)
+	if result, err = m.Data(data).Insert(); err != nil {
+		return err
+	}
+	if value.Kind() == reflect.Ptr && value.Elem().Kind() == reflect.Struct {
+		field := value.Elem().FieldByName("ID")
+		if field.IsValid() && field.Kind() == reflect.Int64 {
+			if LastID, err = result.LastInsertId(); err != nil {
+				return err
+			}
+			field.SetInt(LastID)
+		}
+	}
+	return nil
+}
+
 // InsertAndGetId performs action Insert and returns the last insert id that automatically generated.
 func (m *Model) InsertAndGetId(data ...interface{}) (lastInsertId int64, err error) {
 	var ctx = m.GetCtx()
