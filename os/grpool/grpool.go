@@ -25,13 +25,18 @@ type Func func(ctx context.Context)
 // RecoverFunc is the pool runtime panic recover function which contains context parameter.
 type RecoverFunc func(ctx context.Context, err error)
 
+const (
+	Closed  = 0 // Pool is Closed.
+	Running = 1 // Pool is Running.
+	Stopped = 2 // Pool is Stopped.
+)
+
 // Pool manages the goroutines using pool.
 type Pool struct {
-	limit   int         // Max goroutine count limit.
-	count   *gtype.Int  // Current running goroutine count.
-	list    *glist.List // List for asynchronous job adding purpose.
-	closed  *gtype.Bool // Is pool closed or not.
-	running *gtype.Bool // Is pool running or not.
+	limit int         // Max goroutine count limit.
+	count *gtype.Int  // Current Running goroutine count.
+	list  *glist.List // List for asynchronous job adding purpose.
+	state *gtype.Int  // Pool state, 0: Closed, 1: Running. 2. Stopped
 }
 
 type localPoolItem struct {
@@ -54,11 +59,10 @@ var (
 // which is not limited in default.
 func New(limit ...int) *Pool {
 	p := &Pool{
-		limit:   -1,
-		count:   gtype.NewInt(),
-		list:    glist.New(true),
-		closed:  gtype.NewBool(),
-		running: gtype.NewBool(true),
+		limit: -1,
+		count: gtype.NewInt(),
+		list:  glist.New(true),
+		state: gtype.NewInt(Running), // the default state is Running
 	}
 	if len(limit) > 0 && limit[0] > 0 {
 		p.limit = limit[0]
@@ -95,10 +99,10 @@ func Jobs() int {
 // Add pushes a new job to the pool.
 // The job will be executed asynchronously.
 func (p *Pool) Add(ctx context.Context, f Func) error {
-	for p.closed.Val() {
+	for p.state.Val() == Closed {
 		return gerror.NewCode(
 			gcode.CodeInvalidOperation,
-			"goroutine pool is already closed",
+			"goroutine pool is already Closed",
 		)
 	}
 	p.list.PushFront(&localPoolItem{
@@ -121,6 +125,10 @@ func (p *Pool) checkAndFork() {
 			// No need fork new goroutine.
 			return
 		}
+		if p.state.Val() != Running {
+			// Pool is not Running, no need fork new goroutine.
+			return
+		}
 		if p.count.Cas(n, n+1) {
 			// Use CAS to guarantee atomicity.
 			break
@@ -129,14 +137,12 @@ func (p *Pool) checkAndFork() {
 	// Create job function in goroutine.
 	go func() {
 		defer p.count.Add(-1)
-		if !p.running.Val() {
-			return
-		}
+
 		var (
 			listItem interface{}
 			poolItem *localPoolItem
 		)
-		for !p.closed.Val() {
+		for p.state.Val() == Running {
 			listItem = p.list.PopBack()
 			if listItem == nil {
 				return
@@ -186,29 +192,39 @@ func (p *Pool) Jobs() int {
 	return p.list.Size()
 }
 
-// IsClosed returns if pool is closed.
+// IsClosed returns if pool is Closed.
 func (p *Pool) IsClosed() bool {
-	return p.closed.Val()
+	return p.state.Val() == Closed
+}
+
+// IsStopped returns if pool is Stopped.
+func (p *Pool) IsStopped() bool {
+	return p.state.Val() == Stopped
 }
 
 // Close closes the goroutine pool, which makes all goroutines exit.
 func (p *Pool) Close() {
-	p.closed.Set(true)
-	p.running.Set(false)
+	p.state.Set(Closed)
 }
 
-// IsRunning returns if pool is running.
+// IsRunning returns if pool is Running.
 func (p *Pool) IsRunning() bool {
-	return p.running.Val()
+	return p.state.Val() == Running
+}
+
+// State returns the current state of the pool.
+func (p *Pool) State() int {
+	return p.state.Val()
 }
 
 // Start Starts the goroutine pool. You can call Stop() to stop the pool.
-// Note That. You cant start a closed pool.
+// Note That. You cant start a Closed pool.
 func (p *Pool) Start() {
-	p.running.Set(true)
+	p.state.Set(Running)
+	p.checkAndFork()
 }
 
 // Stop stops the goroutine pool. You can call Start() again to restart the pool.
 func (p *Pool) Stop() {
-	p.running.Set(false)
+	p.state.Set(Stopped)
 }
